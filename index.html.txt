@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PSS Asset Scan & Bukti</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #0f172a; color: #e2e8f0; }
+    .glass-card { background: rgba(15,23,42,0.75); backdrop-filter: blur(18px); border: 1px solid rgba(148,163,184,0.12); }
+  </style>
+</head>
+<body class="min-h-screen pb-10">
+  <div class="max-w-3xl mx-auto px-4 pt-6">
+    <nav class="glass-card rounded-3xl p-4 flex items-center justify-between shadow-xl shadow-slate-900/20">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+          <span class="text-2xl">📚</span>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-white">PSS Asset System</h1>
+          <p class="text-xs text-slate-400">Imbas QR + lampirkan bukti gambar</p>
+        </div>
+      </div>
+      <span class="text-xs px-3 py-2 rounded-2xl bg-slate-800 text-slate-300">Google Sheets Backend</span>
+    </nav>
+
+    <main class="space-y-6 mt-6">
+      <section class="glass-card rounded-[2rem] p-6">
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-wrap gap-3">
+            <button onclick="mulaImbasQR()" class="px-4 py-3 rounded-2xl bg-amber-500 text-slate-950 hover:bg-amber-400 transition">
+              📷 Mula Imbas QR
+            </button>
+            <button onclick="bukaKamera()" class="px-4 py-3 rounded-2xl bg-slate-800 text-white hover:bg-slate-700 transition">
+              📸 Buka Kamera Bukti
+            </button>
+          </div>
+
+          <div id="qr-reader" class="w-full rounded-3xl overflow-hidden bg-slate-950" style="min-height:320px;"></div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Kod Peralatan</label>
+              <input id="input-kod-item" readonly class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
+            </div>
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Nama Peralatan</label>
+              <input id="input-nama-item" placeholder="Contoh: Kamera DSLR" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Nama Peminjam</label>
+              <input id="input-nama-peminjam" placeholder="Nama Guru / Pustakawan" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
+            </div>
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">No. KP</label>
+              <input id="input-no-kp" placeholder="801020-14-5678" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Tarikh Pulang</label>
+              <input id="input-tarikh-pulang" type="date" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
+            </div>
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Status</label>
+              <select id="input-status" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white">
+                <option value="active">Active</option>
+                <option value="returned">Returned</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="glass-card rounded-3xl p-4 bg-slate-950/90 border border-slate-700">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs uppercase tracking-[0.24em] text-slate-400">Preview Bukti Gambar</p>
+              </div>
+            </div>
+            <video id="video-stream" autoplay playsinline class="w-full mt-4 rounded-3xl bg-black hidden"></video>
+            <button id="btn-capture-photo" onclick="captureGambar()" class="mt-4 px-4 py-3 rounded-2xl bg-slate-700 text-white hidden">📸 Ambil Gambar</button>
+            <img id="preview-img" class="w-full mt-4 rounded-3xl border border-slate-700 hidden" alt="Preview Bukti" />
+          </div>
+
+          <button onclick="hantarRekod()" class="w-full rounded-3xl bg-emerald-500 px-6 py-4 text-sm font-bold text-slate-950 hover:bg-emerald-400 transition">
+            Hantar Rekod Pinjaman
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfy.../exec"; // Ganti URL Apps Script anda
+    let html5QrScanner = null;
+    let imageBase64 = "";
+    let streamMedia = null;
+
+    function mulaImbasQR() {
+      if (html5QrScanner) {
+        html5QrScanner.clear().catch(() => {});
+      }
+      html5QrScanner = new Html5Qrcode("qr-reader");
+      html5QrScanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 280 },
+        qrCodeMessage => {
+          document.getElementById("input-kod-item").value = qrCodeMessage.trim();
+          html5QrScanner.pause();
+        },
+        errorMessage => {
+          console.debug("QR error:", errorMessage);
+        }
+      ).catch(err => {
+        alert("Tidak dapat mula imbas QR: " + err);
+      });
+    }
+
+    function bukaKamera() {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+        .then(stream => {
+          streamMedia = stream;
+          const videoEl = document.getElementById("video-stream");
+          videoEl.srcObject = stream;
+          videoEl.classList.remove("hidden");
+          document.getElementById("btn-capture-photo").classList.remove("hidden");
+        })
+        .catch(err => {
+          alert("Akses kamera ditolak: " + err.message);
+        });
+    }
+
+    function captureGambar() {
+      const videoEl = document.getElementById("video-stream");
+      const canvas = document.createElement("canvas");
+      canvas.width = videoEl.videoWidth || 640;
+      canvas.height = videoEl.videoHeight || 480;
+      canvas.getContext("2d").drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      imageBase64 = canvas.toDataURL("image/jpeg", 0.85);
+      const img = document.getElementById("preview-img");
+      img.src = imageBase64;
+      img.classList.remove("hidden");
+
+      if (streamMedia) {
+        streamMedia.getTracks().forEach(track => track.stop());
+        streamMedia = null;
+      }
+      videoEl.classList.add("hidden");
+      document.getElementById("btn-capture-photo").classList.add("hidden");
+    }
+
+    async function hantarRekod() {
+      const kodItem = document.getElementById("input-kod-item").value.trim();
+      const namaItem = document.getElementById("input-nama-item").value.trim();
+      const namaPeminjam = document.getElementById("input-nama-peminjam").value.trim();
+      const noKP = document.getElementById("input-no-kp").value.trim();
+      const tarikhPulang = document.getElementById("input-tarikh-pulang").value;
+      const status = document.getElementById("input-status").value;
+
+      if (!kodItem || !namaItem || !namaPeminjam) {
+        alert("Sila lengkapkan Kod QR, Nama Peralatan dan Nama Peminjam.");
+        return;
+      }
+
+      const payload = {
+        action: "add",
+        id: `PSS-${Date.now()}`,
+        date: new Date().toLocaleDateString("en-GB"),
+        time: new Date().toLocaleTimeString("en-GB"),
+        name: namaPeminjam,
+        category: "Guru",
+        item: namaItem,
+        code: kodItem,
+        status: status,
+        returnDate: tarikhPulang || "-",
+        ic: noKP || "-",
+        imageBase64: imageBase64
+      };
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (result.result === "success") {
+          alert("Rekod berjaya dihantar!");
+          resetBorang();
+        } else {
+          alert("Ralat hantar: " + (result.message || JSON.stringify(result)));
+        }
+      } catch (err) {
+        alert("Gagal sambung ke API: " + err.message);
+      }
+    }
+
+    function resetBorang() {
+      document.getElementById("input-kod-item").value = "";
+      document.getElementById("input-nama-item").value = "";
+      document.getElementById("input-nama-peminjam").value = "";
+      document.getElementById("input-no-kp").value = "";
+      document.getElementById("input-tarikh-pulang").value = "";
+      document.getElementById("input-status").value = "active";
+      document.getElementById("preview-img").classList.add("hidden");
+      imageBase64 = "";
+      if (html5QrScanner) { html5QrScanner.clear().catch(() => {}); }
+    }
+  </script>
+</body>
+</html>
