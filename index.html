@@ -53,27 +53,26 @@
 
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
-              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Nama Peminjam</label>
-              <input id="input-nama-peminjam" placeholder="Nama Guru / Pustakawan" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
-            </div>
-            <div>
               <label class="text-xs uppercase tracking-[0.24em] text-slate-400">No. KP</label>
               <input id="input-no-kp" placeholder="801020-14-5678" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
             </div>
+            <div>
+              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Nama Peminjam</label>
+              <input id="input-nama-peminjam" readonly class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-slate-200" placeholder="Masukkan No. KP dahulu" />
+            </div>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Tarikh Pulang</label>
-              <input id="input-tarikh-pulang" type="date" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white" />
+          <div class="text-xs text-amber-300">* Imbas semua peralatan dahulu untuk PINJAM PUKAL. Anda boleh tambah beberapa item dalam troli.</div>
+
+          <div class="glass-card rounded-3xl p-4 bg-slate-950/90 border border-slate-700">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs uppercase tracking-[0.24em] text-slate-400">Troli Imbasan</p>
+                <p id="troli-count" class="text-[11px] text-slate-500 mt-1">0 item disenarai</p>
+              </div>
+              <button type="button" onclick="kosongkanTroli()" class="text-[11px] uppercase tracking-[0.24em] text-amber-400">Kosongkan</button>
             </div>
-            <div>
-              <label class="text-xs uppercase tracking-[0.24em] text-slate-400">Status</label>
-              <select id="input-status" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white">
-                <option value="active">Active</option>
-                <option value="returned">Returned</option>
-              </select>
-            </div>
+            <div id="senarai-troli" class="space-y-2 mt-4"></div>
           </div>
 
           <div class="glass-card rounded-3xl p-4 bg-slate-950/90 border border-slate-700">
@@ -88,7 +87,7 @@
           </div>
 
           <button onclick="hantarRekod()" class="w-full rounded-3xl bg-emerald-500 px-6 py-4 text-sm font-bold text-slate-950 hover:bg-emerald-400 transition">
-            Hantar Rekod Pinjaman
+            Pinjam Pukal
           </button>
         </div>
       </section>
@@ -100,116 +99,194 @@
     let html5QrScanner = null;
     let imageBase64 = "";
     let streamMedia = null;
+    let dbBorrowers = [];
+    let dbInventory = [];
+    let troliItems = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      muatDataMaster();
+      document.getElementById('input-no-kp').addEventListener('change', autoIsiNamaPeminjam);
+    });
+
+    async function muatDataMaster() {
+      try {
+        const response = await fetch(`${API_URL}?action=getLists`);
+        const result = await response.json();
+        dbBorrowers = result.borrowers || [];
+        dbInventory = result.inventory || [];
+      } catch (e) {
+        console.warn('Gagal memuatkan data master:', e);
+      }
+    }
+
+    function normalizeIC(value) {
+      return value.toString().trim().replace(/[^0-9]/g, '');
+    }
+
+    function autoIsiNamaPeminjam() {
+      const ic = normalizeIC(document.getElementById('input-no-kp').value);
+      const peminjam = dbBorrowers.find(b => normalizeIC(b.ic) === ic);
+      document.getElementById('input-nama-peminjam').value = peminjam ? peminjam.name : '';
+    }
 
     function mulaImbasQR() {
       if (html5QrScanner) {
-        html5QrScanner.clear().catch(() => {});
+        html5QrScanner.stop().catch(() => {});
       }
-      html5QrScanner = new Html5Qrcode("qr-reader");
+      html5QrScanner = new Html5Qrcode('qr-reader');
       html5QrScanner.start(
-        { facingMode: "environment" },
+        { facingMode: 'environment' },
         { fps: 10, qrbox: 280 },
         qrCodeMessage => {
-          document.getElementById("input-kod-item").value = qrCodeMessage.trim();
-          html5QrScanner.pause();
+          tambahKeTroli(qrCodeMessage.trim());
         },
         errorMessage => {
-          console.debug("QR error:", errorMessage);
+          console.debug('QR error:', errorMessage);
         }
       ).catch(err => {
-        alert("Tidak dapat mula imbas QR: " + err);
+        alert('Tidak dapat mula imbas QR: ' + err);
       });
     }
 
+    function tambahKeTroli(kodItem) {
+      if (!kodItem) return;
+      const noKP = document.getElementById('input-no-kp').value.trim();
+      if (!noKP) {
+        alert('Sila masukkan No. KP dahulu.');
+        return;
+      }
+      if (troliItems.some(item => item.code === kodItem)) {
+        alert('Kod ini sudah ada dalam troli.');
+        return;
+      }
+      const inventoryItem = dbInventory.find(item => item.code.toLowerCase() === kodItem.toLowerCase());
+      const itemName = inventoryItem ? inventoryItem.name : document.getElementById('input-nama-item').value.trim() || 'Tidak diketahui';
+      document.getElementById('input-kod-item').value = kodItem;
+      if (inventoryItem) {
+        document.getElementById('input-nama-item').value = inventoryItem.name;
+      }
+      troliItems.push({ code: kodItem, name: itemName });
+      kemaskiniTroliVisual();
+    }
+
+    function kemaskiniTroliVisual() {
+      const container = document.getElementById('senarai-troli');
+      const count = document.getElementById('troli-count');
+      if (troliItems.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-500 italic">Sila imbas peralatan untuk tambah ke troli.</p>';
+      } else {
+        container.innerHTML = troliItems.map(item => `
+          <div class="flex items-center justify-between bg-slate-900/70 border border-slate-700 px-3 py-2 rounded-2xl">
+            <div>
+              <p class="text-xs text-slate-400">${item.name}</p>
+              <p class="text-[11px] font-mono text-slate-300">${item.code}</p>
+            </div>
+            <button type="button" onclick="buangDariTroli('${item.code}')" class="text-red-400 text-xs font-semibold">Padam</button>
+          </div>`).join('');
+      }
+      count.textContent = `${troliItems.length} item disenarai`;
+    }
+
+    function buangDariTroli(kod) {
+      troliItems = troliItems.filter(item => item.code !== kod);
+      kemaskiniTroliVisual();
+    }
+
+    function kosongkanTroli() {
+      troliItems = [];
+      kemaskiniTroliVisual();
+    }
+
     function bukaKamera() {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
         .then(stream => {
           streamMedia = stream;
-          const videoEl = document.getElementById("video-stream");
+          const videoEl = document.getElementById('video-stream');
           videoEl.srcObject = stream;
-          videoEl.classList.remove("hidden");
-          document.getElementById("btn-capture-photo").classList.remove("hidden");
+          videoEl.classList.remove('hidden');
+          document.getElementById('btn-capture-photo').classList.remove('hidden');
         })
         .catch(err => {
-          alert("Akses kamera ditolak: " + err.message);
+          alert('Akses kamera ditolak: ' + err.message);
         });
     }
 
     function captureGambar() {
-      const videoEl = document.getElementById("video-stream");
-      const canvas = document.createElement("canvas");
+      const videoEl = document.getElementById('video-stream');
+      const canvas = document.createElement('canvas');
       canvas.width = videoEl.videoWidth || 640;
       canvas.height = videoEl.videoHeight || 480;
-      canvas.getContext("2d").drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      imageBase64 = canvas.toDataURL("image/jpeg", 0.85);
-      const img = document.getElementById("preview-img");
+      canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      imageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      const img = document.getElementById('preview-img');
       img.src = imageBase64;
-      img.classList.remove("hidden");
+      img.classList.remove('hidden');
 
       if (streamMedia) {
         streamMedia.getTracks().forEach(track => track.stop());
         streamMedia = null;
       }
-      videoEl.classList.add("hidden");
-      document.getElementById("btn-capture-photo").classList.add("hidden");
+      videoEl.classList.add('hidden');
+      document.getElementById('btn-capture-photo').classList.add('hidden');
     }
 
     async function hantarRekod() {
-      const kodItem = document.getElementById("input-kod-item").value.trim();
-      const namaItem = document.getElementById("input-nama-item").value.trim();
-      const namaPeminjam = document.getElementById("input-nama-peminjam").value.trim();
-      const noKP = document.getElementById("input-no-kp").value.trim();
-      const tarikhPulang = document.getElementById("input-tarikh-pulang").value;
-      const status = document.getElementById("input-status").value;
+      const noKP = document.getElementById('input-no-kp').value.trim();
+      const namaPeminjam = document.getElementById('input-nama-peminjam').value.trim();
 
-      if (!kodItem || !namaItem || !namaPeminjam) {
-        alert("Sila lengkapkan Kod QR, Nama Peralatan dan Nama Peminjam.");
+      if (!noKP) {
+        alert('Sila masukkan No. KP sebelum pinjaman.');
+        return;
+      }
+      if (troliItems.length === 0) {
+        alert('Sila imbas sekurang-kurangnya satu peralatan untuk pinjam pukal.');
+        return;
+      }
+      if (!namaPeminjam) {
+        alert('Nama peminjam tidak dijumpai. Sila semak No. KP.');
         return;
       }
 
-      const payload = {
-        action: "add",
-        id: `PSS-${Date.now()}`,
-        date: new Date().toLocaleDateString("en-GB"),
-        time: new Date().toLocaleTimeString("en-GB"),
+      const payloads = troliItems.map(item => ({
+        action: 'add',
+        id: `PSS-${item.code}-${Date.now()}`,
+        date: new Date().toLocaleDateString('en-GB'),
+        time: new Date().toLocaleTimeString('en-GB'),
         name: namaPeminjam,
-        category: "Guru",
-        item: namaItem,
-        code: kodItem,
-        status: status,
-        returnDate: tarikhPulang || "-",
-        ic: noKP || "-",
+        category: 'Guru',
+        item: item.name,
+        code: item.code,
+        status: 'active',
+        returnDate: '-',
+        ic: noKP,
         imageBase64: imageBase64
-      };
+      }));
 
       try {
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (result.result === "success") {
-          alert("Rekod berjaya dihantar!");
-          resetBorang();
+        const responses = await Promise.all(payloads.map(payload =>
+          fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+        ));
+
+        const results = await Promise.all(responses.map(res => res.json()));
+        const isSuccess = results.every(r => r.result === 'success');
+
+        if (isSuccess) {
+          alert(`Pinjaman pukal berjaya diproses untuk ${troliItems.length} item.`);
+          kosongkanTroli();
+          document.getElementById('input-kod-item').value = '';
+          document.getElementById('input-nama-item').value = '';
+          document.getElementById('preview-img').classList.add('hidden');
+          imageBase64 = '';
         } else {
-          alert("Ralat hantar: " + (result.message || JSON.stringify(result)));
+          alert('Sebahagian rekod gagal dihantar. Sila semak API.');
         }
       } catch (err) {
-        alert("Gagal sambung ke API: " + err.message);
+        alert('Gagal sambung ke API: ' + err.message);
       }
-    }
-
-    function resetBorang() {
-      document.getElementById("input-kod-item").value = "";
-      document.getElementById("input-nama-item").value = "";
-      document.getElementById("input-nama-peminjam").value = "";
-      document.getElementById("input-no-kp").value = "";
-      document.getElementById("input-tarikh-pulang").value = "";
-      document.getElementById("input-status").value = "active";
-      document.getElementById("preview-img").classList.add("hidden");
-      imageBase64 = "";
-      if (html5QrScanner) { html5QrScanner.clear().catch(() => {}); }
     }
   </script>
 </body>
