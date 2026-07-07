@@ -33,9 +33,6 @@
             <button onclick="mulaImbasQR()" class="px-4 py-3 rounded-2xl bg-amber-500 text-slate-950 hover:bg-amber-400 transition">
               📷 Mula Imbas QR
             </button>
-            <button onclick="bukaKamera()" class="px-4 py-3 rounded-2xl bg-slate-800 text-white hover:bg-slate-700 transition">
-              📸 Buka Kamera Bukti
-            </button>
           </div>
 
           <div id="qr-reader" class="w-full rounded-3xl overflow-hidden bg-slate-950" style="min-height:320px;"></div>
@@ -75,16 +72,7 @@
             <div id="senarai-troli" class="space-y-2 mt-4"></div>
           </div>
 
-          <div class="glass-card rounded-3xl p-4 bg-slate-950/90 border border-slate-700">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-xs uppercase tracking-[0.24em] text-slate-400">Preview Bukti Gambar</p>
-              </div>
-            </div>
-            <video id="video-stream" autoplay playsinline class="w-full mt-4 rounded-3xl bg-black hidden"></video>
-            <button id="btn-capture-photo" onclick="captureGambar()" class="mt-4 px-4 py-3 rounded-2xl bg-slate-700 text-white hidden">📸 Ambil Gambar</button>
-            <img id="preview-img" class="w-full mt-4 rounded-3xl border border-slate-700 hidden" alt="Preview Bukti" />
-          </div>
+
 
           <button onclick="hantarRekod()" class="w-full rounded-3xl bg-emerald-500 px-6 py-4 text-sm font-bold text-slate-950 hover:bg-emerald-400 transition">
             Pinjam Pukal
@@ -95,10 +83,8 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzMvW6KEMwAof_l7ltScWtxVGPl5LD642eR97MB0RLgqLOfw145MuSANgRxSmKAZKXINA/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbyZGb5o_c7mbMDRV123A4nm9EumA9VwGZDRRzKrwqFdxxkte81gcpXWADroPCd91oj57Q/exec";
     let html5QrScanner = null;
-    let imageBase64 = "";
-    let streamMedia = null;
     let dbBorrowers = [];
     let dbInventory = [];
     let troliItems = [];
@@ -197,38 +183,6 @@
       kemaskiniTroliVisual();
     }
 
-    function bukaKamera() {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-        .then(stream => {
-          streamMedia = stream;
-          const videoEl = document.getElementById('video-stream');
-          videoEl.srcObject = stream;
-          videoEl.classList.remove('hidden');
-          document.getElementById('btn-capture-photo').classList.remove('hidden');
-        })
-        .catch(err => {
-          alert('Akses kamera ditolak: ' + err.message);
-        });
-    }
-
-    function captureGambar() {
-      const videoEl = document.getElementById('video-stream');
-      const canvas = document.createElement('canvas');
-      canvas.width = videoEl.videoWidth || 640;
-      canvas.height = videoEl.videoHeight || 480;
-      canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      imageBase64 = canvas.toDataURL('image/jpeg', 0.85);
-      const img = document.getElementById('preview-img');
-      img.src = imageBase64;
-      img.classList.remove('hidden');
-
-      if (streamMedia) {
-        streamMedia.getTracks().forEach(track => track.stop());
-        streamMedia = null;
-      }
-      videoEl.classList.add('hidden');
-      document.getElementById('btn-capture-photo').classList.add('hidden');
-    }
 
     async function hantarRekod() {
       const noKP = document.getElementById('input-no-kp').value.trim();
@@ -258,8 +212,7 @@
         code: item.code,
         status: 'active',
         returnDate: '-',
-        ic: noKP,
-        imageBase64: imageBase64
+        ic: noKP
       }));
 
       try {
@@ -279,8 +232,6 @@
           kosongkanTroli();
           document.getElementById('input-kod-item').value = '';
           document.getElementById('input-nama-item').value = '';
-          document.getElementById('preview-img').classList.add('hidden');
-          imageBase64 = '';
         } else {
           alert('Sebahagian rekod gagal dihantar. Sila semak API.');
         }
