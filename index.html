@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PSS Asset System</title>
+  <title>PSS SK Satu Sultan Alam Shah</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
@@ -88,6 +88,7 @@
     let dbBorrowers = [];
     let dbInventory = [];
     let troliItems = [];
+    let kodPinjamanAktif = new Set();
     let scannerSedangBermula = false;
     let scannerSedangAktif = false;
 
@@ -104,6 +105,12 @@
         const result = await response.json();
         dbBorrowers = result.borrowers || [];
         dbInventory = result.inventory || [];
+        const activeLoans = result.activeLoans || result.loanedCodes || [];
+        kodPinjamanAktif = new Set(
+          activeLoans
+            .map(item => normalizeItemCode(typeof item === 'string' ? item : item?.code || ''))
+            .filter(Boolean)
+        );
       } catch (e) {
         console.warn('Gagal memuatkan data master:', e);
       }
@@ -111,6 +118,14 @@
 
     function normalizeIC(value) {
       return value.toString().trim().replace(/[^0-9]/g, '');
+    }
+
+    function normalizeItemCode(value) {
+      return value.toString().trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    }
+
+    function adakahItemSedangDipinjam(kodItem) {
+      return kodPinjamanAktif.has(normalizeItemCode(kodItem));
     }
 
     function autoIsiNamaPeminjam() {
@@ -219,22 +234,27 @@
 
     function tambahKeTroli(kodItem) {
       if (!kodItem) return;
+      const kodItemNormalized = normalizeItemCode(kodItem);
       const noKP = document.getElementById('input-no-kp').value.trim();
       if (!noKP) {
         alert('Sila masukkan No. KP dahulu.');
         return;
       }
-      if (troliItems.some(item => item.code === kodItem)) {
-        alert('Kod ini sudah ada dalam troli.');
+      if (troliItems.some(item => normalizeItemCode(item.code) === kodItemNormalized)) {
+        alert('Item ini sudah ada dalam troli pinjaman.');
         return;
       }
-      const inventoryItem = dbInventory.find(item => item.code.toLowerCase() === kodItem.toLowerCase());
+      if (adakahItemSedangDipinjam(kodItemNormalized)) {
+        alert('Item ini sedang dipinjam dan belum dipulangkan.');
+        return;
+      }
+      const inventoryItem = dbInventory.find(item => normalizeItemCode(item.code) === kodItemNormalized);
       const itemName = inventoryItem ? inventoryItem.name : document.getElementById('input-nama-item').value.trim() || 'Tidak diketahui';
-      document.getElementById('input-kod-item').value = kodItem;
+      document.getElementById('input-kod-item').value = kodItemNormalized;
       if (inventoryItem) {
         document.getElementById('input-nama-item').value = inventoryItem.name;
       }
-      troliItems.push({ code: kodItem, name: itemName });
+      troliItems.push({ code: kodItemNormalized, name: itemName });
       kemaskiniTroliVisual();
     }
 
@@ -314,6 +334,7 @@
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify(payload)
           });
+          kodPinjamanAktif.add(normalizeItemCode(payload.code));
         }
 
         alert(`Pinjaman pukal berjaya diproses untuk ${troliItems.length} item.`);
