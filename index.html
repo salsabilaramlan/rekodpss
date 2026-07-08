@@ -100,6 +100,9 @@
     let kodPinjamanAktif = new Set();
     let scannerSedangBermula = false;
     let scannerSedangAktif = false;
+    let kodScanTerakhir = '';
+    let masaScanTerakhir = 0;
+    const TEMPOH_DEBOUNCE_SCAN = 1800;
 
     window.addEventListener('DOMContentLoaded', () => {
       muatDataMaster();
@@ -137,6 +140,33 @@
       return kodPinjamanAktif.has(normalizeItemCode(kodItem));
     }
 
+    function bunyikanScanBerjaya() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(920, ctx.currentTime);
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.14);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.15);
+
+        // Tutup context kecil ini untuk elak penggunaan memori berlebihan pada telefon.
+        setTimeout(() => ctx.close().catch(() => {}), 180);
+      } catch (e) {
+        console.debug('Bunyi scan gagal dimainkan:', e);
+      }
+    }
+
     function autoIsiNamaPeminjam() {
       const ic = normalizeIC(document.getElementById('input-no-kp').value);
       const peminjam = dbBorrowers.find(b => normalizeIC(b.ic) === ic);
@@ -168,15 +198,32 @@
       html5QrScanner = null;
       scannerSedangAktif = false;
       scannerSedangBermula = false;
+      kodScanTerakhir = '';
+      masaScanTerakhir = 0;
       document.getElementById('qr-reader').innerHTML = '';
     }
 
     async function mulaImbasQR() {
-      if (scannerSedangBermula || scannerSedangAktif) {
+      if (scannerSedangBermula) {
         return;
       }
 
       const butangImbas = document.querySelector('button[onclick="mulaImbasQR()"]');
+      const noKP = document.getElementById('input-no-kp').value.trim();
+
+      if (scannerSedangAktif) {
+        await hentikanImbasQR();
+        if (butangImbas) {
+          butangImbas.disabled = false;
+          butangImbas.textContent = '📷 Mula Imbas QR';
+        }
+        return;
+      }
+
+      if (!noKP) {
+        alert('Sila masukkan No. KP dahulu sebelum mula imbas.');
+        return;
+      }
 
       try {
         scannerSedangBermula = true;
@@ -191,13 +238,20 @@
         await html5QrScanner.start(
           { facingMode: { exact: 'environment' } },
           { fps: 10, qrbox: 280, aspectRatio: 1.0 },
-          async qrCodeMessage => {
-            tambahKeTroli(qrCodeMessage.trim());
-            await hentikanImbasQR();
-            if (butangImbas) {
-              butangImbas.disabled = false;
-              butangImbas.textContent = '📷 Mula Imbas QR';
+          qrCodeMessage => {
+            const kodItem = normalizeItemCode(qrCodeMessage.trim());
+            const masaKini = Date.now();
+
+            if (!kodItem) return;
+
+            // Elak scanner spam baca kod sama berkali-kali pada satu frame/masa pendek.
+            if (kodItem === kodScanTerakhir && (masaKini - masaScanTerakhir) < TEMPOH_DEBOUNCE_SCAN) {
+              return;
             }
+
+            kodScanTerakhir = kodItem;
+            masaScanTerakhir = masaKini;
+            tambahKeTroli(kodItem);
           },
           errorMessage => {
             console.debug('QR error:', errorMessage);
@@ -211,13 +265,18 @@
             await html5QrScanner.start(
               { facingMode: 'environment' },
               { fps: 10, qrbox: 280, aspectRatio: 1.0 },
-              async qrCodeMessage => {
-                tambahKeTroli(qrCodeMessage.trim());
-                await hentikanImbasQR();
-                if (butangImbas) {
-                  butangImbas.disabled = false;
-                  butangImbas.textContent = '📷 Mula Imbas QR';
+              qrCodeMessage => {
+                const kodItem = normalizeItemCode(qrCodeMessage.trim());
+                const masaKini = Date.now();
+
+                if (!kodItem) return;
+                if (kodItem === kodScanTerakhir && (masaKini - masaScanTerakhir) < TEMPOH_DEBOUNCE_SCAN) {
+                  return;
                 }
+
+                kodScanTerakhir = kodItem;
+                masaScanTerakhir = masaKini;
+                tambahKeTroli(kodItem);
               },
               errorMessage => {
                 console.debug('QR error:', errorMessage);
@@ -236,7 +295,7 @@
           butangImbas.textContent = '📷 Mula Imbas QR';
         } else if (butangImbas && scannerSedangAktif) {
           butangImbas.disabled = false;
-          butangImbas.textContent = '📷 Imbas Semula';
+          butangImbas.textContent = '⏹ Henti Imbas';
         }
       }
     }
@@ -265,6 +324,7 @@
       }
       troliItems.push({ code: kodItemNormalized, name: itemName });
       kemaskiniTroliVisual();
+      bunyikanScanBerjaya();
     }
 
     function kemaskiniTroliVisual() {
