@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PSS Asset Scan & Bukti</title>
+  <title>PSS Asset System</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
@@ -20,7 +20,7 @@
         </div>
         <div>
           <h1 class="text-lg font-bold text-white">PSS Asset System</h1>
-          <p class="text-xs text-slate-400">Imbas QR + Lampirkan bukti gambar</p>
+          <p class="text-xs text-slate-400">Imbas QR dan rekod pinjaman terus ke Google Sheets</p>
         </div>
       </div>
       <span class="text-xs px-3 py-2 rounded-2xl bg-slate-800 text-slate-300">Google Sheets Backend</span>
@@ -91,7 +91,9 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       muatDataMaster();
-      document.getElementById('input-no-kp').addEventListener('change', autoIsiNamaPeminjam);
+      const inputNoKP = document.getElementById('input-no-kp');
+      inputNoKP.addEventListener('input', autoIsiNamaPeminjam);
+      inputNoKP.addEventListener('change', autoIsiNamaPeminjam);
     });
 
     async function muatDataMaster() {
@@ -113,6 +115,11 @@
       const ic = normalizeIC(document.getElementById('input-no-kp').value);
       const peminjam = dbBorrowers.find(b => normalizeIC(b.ic) === ic);
       document.getElementById('input-nama-peminjam').value = peminjam ? peminjam.name : '';
+    }
+
+    function dapatkanRekodPeminjam(noKP) {
+      const ic = normalizeIC(noKP);
+      return dbBorrowers.find(b => normalizeIC(b.ic) === ic) || null;
     }
 
     function mulaImbasQR() {
@@ -201,11 +208,12 @@
         return;
       }
 
-      const borrowerRecord = dbBorrowers.find(b => normalizeIC(b.ic) === normalizeIC(noKP));
+      const borrowerRecord = dapatkanRekodPeminjam(noKP);
+      const butangHantar = document.querySelector('button[onclick="hantarRekod()"]');
 
       const payloads = troliItems.map(item => ({
         action: 'add',
-        id: `PSS-${item.code}-${Date.now()}`,
+        id: `PSS-${item.code}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         date: new Date().toLocaleDateString('en-GB'),
         time: new Date().toLocaleTimeString('en-GB'),
         name: namaPeminjam,
@@ -218,14 +226,19 @@
       }));
 
       try {
-        await Promise.all(payloads.map(payload =>
+        if (butangHantar) {
+          butangHantar.disabled = true;
+          butangHantar.textContent = 'Menghantar...';
+        }
+
+        for (const payload of payloads) {
           fetch(API_URL, {
             mode: 'no-cors',
             method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify(payload)
-          })
-        ));
+          });
+        }
 
         alert(`Pinjaman pukal berjaya diproses untuk ${troliItems.length} item.`);
         kosongkanTroli();
@@ -233,6 +246,11 @@
         document.getElementById('input-nama-item').value = '';
       } catch (err) {
         alert('Gagal sambung ke API: ' + err.message);
+      } finally {
+        if (butangHantar) {
+          butangHantar.disabled = false;
+          butangHantar.textContent = 'Pinjam Pukal';
+        }
       }
     }
   </script>
