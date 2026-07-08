@@ -83,7 +83,7 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbyZGb5o_c7mbMDRV123A4nm9EumA9VwGZDRRzKrwqFdxxkte81gcpXWADroPCd91oj57Q/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzwRrerYsTWR9tZ99FW_OYKT65h0IjyOAcIFv4LujfhStQBSrYWct1lxOwCDcOLO0UcpA/exec";
     let html5QrScanner = null;
     let dbBorrowers = [];
     let dbInventory = [];
@@ -201,13 +201,15 @@
         return;
       }
 
+      const borrowerRecord = dbBorrowers.find(b => normalizeIC(b.ic) === normalizeIC(noKP));
+
       const payloads = troliItems.map(item => ({
         action: 'add',
         id: `PSS-${item.code}-${Date.now()}`,
         date: new Date().toLocaleDateString('en-GB'),
         time: new Date().toLocaleTimeString('en-GB'),
         name: namaPeminjam,
-        category: 'Guru',
+        category: borrowerRecord?.category || 'Guru',
         item: item.name,
         code: item.code,
         status: 'active',
@@ -216,25 +218,19 @@
       }));
 
       try {
-        const responses = await Promise.all(payloads.map(payload =>
+        await Promise.all(payloads.map(payload =>
           fetch(API_URL, {
+            mode: 'no-cors',
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
             body: JSON.stringify(payload)
           })
         ));
 
-        const results = await Promise.all(responses.map(res => res.json()));
-        const isSuccess = results.every(r => r.result === 'success');
-
-        if (isSuccess) {
-          alert(`Pinjaman pukal berjaya diproses untuk ${troliItems.length} item.`);
-          kosongkanTroli();
-          document.getElementById('input-kod-item').value = '';
-          document.getElementById('input-nama-item').value = '';
-        } else {
-          alert('Sebahagian rekod gagal dihantar. Sila semak API.');
-        }
+        alert(`Pinjaman pukal berjaya diproses untuk ${troliItems.length} item.`);
+        kosongkanTroli();
+        document.getElementById('input-kod-item').value = '';
+        document.getElementById('input-nama-item').value = '';
       } catch (err) {
         alert('Gagal sambung ke API: ' + err.message);
       }
