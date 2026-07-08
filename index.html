@@ -88,6 +88,8 @@
     let dbBorrowers = [];
     let dbInventory = [];
     let troliItems = [];
+    let scannerSedangBermula = false;
+    let scannerSedangAktif = false;
 
     window.addEventListener('DOMContentLoaded', () => {
       muatDataMaster();
@@ -122,23 +124,97 @@
       return dbBorrowers.find(b => normalizeIC(b.ic) === ic) || null;
     }
 
-    function mulaImbasQR() {
-      if (html5QrScanner) {
-        html5QrScanner.stop().catch(() => {});
-      }
-      html5QrScanner = new Html5Qrcode('qr-reader');
-      html5QrScanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: 280 },
-        qrCodeMessage => {
-          tambahKeTroli(qrCodeMessage.trim());
-        },
-        errorMessage => {
-          console.debug('QR error:', errorMessage);
+    async function hentikanImbasQR() {
+      if (!html5QrScanner) return;
+
+      try {
+        if (scannerSedangAktif) {
+          await html5QrScanner.stop();
         }
-      ).catch(err => {
-        alert('Tidak dapat mula imbas QR: ' + err);
-      });
+      } catch (err) {
+        console.debug('Gagal hentikan scanner:', err);
+      }
+
+      try {
+        await html5QrScanner.clear();
+      } catch (err) {
+        console.debug('Gagal clear scanner:', err);
+      }
+
+      html5QrScanner = null;
+      scannerSedangAktif = false;
+      scannerSedangBermula = false;
+      document.getElementById('qr-reader').innerHTML = '';
+    }
+
+    async function mulaImbasQR() {
+      if (scannerSedangBermula || scannerSedangAktif) {
+        return;
+      }
+
+      const butangImbas = document.querySelector('button[onclick="mulaImbasQR()"]');
+
+      try {
+        scannerSedangBermula = true;
+        if (butangImbas) {
+          butangImbas.disabled = true;
+          butangImbas.textContent = 'Membuka Kamera...';
+        }
+
+        await hentikanImbasQR();
+
+        html5QrScanner = new Html5Qrcode('qr-reader');
+        await html5QrScanner.start(
+          { facingMode: { exact: 'environment' } },
+          { fps: 10, qrbox: 280, aspectRatio: 1.0 },
+          async qrCodeMessage => {
+            tambahKeTroli(qrCodeMessage.trim());
+            await hentikanImbasQR();
+            if (butangImbas) {
+              butangImbas.disabled = false;
+              butangImbas.textContent = '📷 Mula Imbas QR';
+            }
+          },
+          errorMessage => {
+            console.debug('QR error:', errorMessage);
+          }
+        );
+
+        scannerSedangAktif = true;
+      } catch (err) {
+        try {
+          if (html5QrScanner) {
+            await html5QrScanner.start(
+              { facingMode: 'environment' },
+              { fps: 10, qrbox: 280, aspectRatio: 1.0 },
+              async qrCodeMessage => {
+                tambahKeTroli(qrCodeMessage.trim());
+                await hentikanImbasQR();
+                if (butangImbas) {
+                  butangImbas.disabled = false;
+                  butangImbas.textContent = '📷 Mula Imbas QR';
+                }
+              },
+              errorMessage => {
+                console.debug('QR error:', errorMessage);
+              }
+            );
+            scannerSedangAktif = true;
+          }
+        } catch (fallbackErr) {
+          await hentikanImbasQR();
+          alert('Tidak dapat mula imbas QR: ' + fallbackErr);
+        }
+      } finally {
+        scannerSedangBermula = false;
+        if (butangImbas && !scannerSedangAktif) {
+          butangImbas.disabled = false;
+          butangImbas.textContent = '📷 Mula Imbas QR';
+        } else if (butangImbas && scannerSedangAktif) {
+          butangImbas.disabled = false;
+          butangImbas.textContent = '📷 Imbas Semula';
+        }
+      }
     }
 
     function tambahKeTroli(kodItem) {
